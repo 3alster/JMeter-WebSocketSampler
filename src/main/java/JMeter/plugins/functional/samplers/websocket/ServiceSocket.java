@@ -4,6 +4,8 @@
  */
 package JMeter.plugins.functional.samplers.websocket;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.io.IOException;
 import java.util.Deque;
 import java.util.Iterator;
@@ -49,10 +51,12 @@ public class ServiceSocket {
     protected Pattern responseExpression;
     protected Pattern disconnectExpression;
     protected boolean connected = false;
+    URI ws_URI;
 
-    public ServiceSocket(WebSocketSampler parent, WebSocketClient client) {
+    public ServiceSocket(WebSocketSampler parent, WebSocketClient client) throws URISyntaxException {
         this.parent = parent;
         this.client = client;
+        ws_URI=parent.getUri();
         
         //Evaluate response matching patterns in case thay contain JMeter variables (i.e. ${var})
         responsePattern = new CompoundVariable(parent.getResponsePattern()).execute();
@@ -82,34 +86,6 @@ public class ServiceSocket {
             }
         }
     }
-    
-	@OnWebSocketFrame
-	public void onFrame(Frame frame) {
-		synchronized (parent) {
-			log.debug("Received frame: " + frame.getPayload() + " "
-					+ frame.getType().name());
-			String length = " (" + frame.getPayloadLength() + " bytes)";
-			logMessage.append(" - Received frame #").append(messageCounter)
-					.append(length);
-			String frameTxt = new String(frame.getPayload().array());
-			addResponseMessage("[Frame " + (messageCounter++) + "]\n"
-					+ frameTxt + "\n\n");
-
-			if (responseExpression == null
-					|| responseExpression.matcher(frameTxt).find()) {
-				logMessage.append("; matched response pattern").append("\n");
-				closeLatch.countDown();
-			} else if (!disconnectPattern.isEmpty()
-					&& disconnectExpression.matcher(frameTxt).find()) {
-				logMessage.append("; matched connection close pattern").append(
-						"\n");
-				closeLatch.countDown();
-				close(StatusCode.NORMAL, "JMeter closed session.");
-			} else {
-				logMessage.append("; didn't match any pattern").append("\n");
-			}
-		}
-	}
 
     @OnWebSocketConnect
     public void onOpen(Session session) {
@@ -121,20 +97,30 @@ public class ServiceSocket {
     }
 
     @OnWebSocketClose
-    public void onClose(int statusCode, String reason) {
-        if (statusCode != 1000) {
-            log.error("Disconnect " + statusCode + ": " + reason);
-            logMessage.append(" - WebSocket conection closed unexpectedly by the server: [").append(statusCode).append("] ").append(reason).append("\n");
-            error = statusCode;
-        } else {
-            logMessage.append(" - WebSocket conection has been successfully closed by the server").append("\n");
-            log.debug("Disconnect " + statusCode + ": " + reason);
-        }
+    public void onClose(int statusCode, String reason) throws IOException{
+        if (statusCode==1006){
+            log.debug("trying to Reconnect");
+            logMessage.append(" Reopening websocket connection\n");
+            client.connect(this,ws_URI);
+        }  else{
+
+            if (statusCode != 1000) {
+                log.error("Disconnect " + statusCode + ": " + reason);
+                logMessage.append(" - WebSocket conection closed unexpectedly by the server: [").append(statusCode).append("] ").append(reason).append("\n");
+                error = statusCode;
+            } else {
+                logMessage.append(" - WebSocket conection has been successfully closed by the server").append("\n");
+                log.debug("Disconnect " + statusCode + ": " + reason);
+            }
+            
         
-        //Notify connection opening and closing latches of the closed connection
-        openLatch.countDown();
-        closeLatch.countDown();
-        connected = false;
+            //Notify connection opening and closing latches of the closed connection
+            openLatch.countDown();
+            closeLatch.countDown();
+            connected = false;
+        }
+
+        
     }
 
     /**
