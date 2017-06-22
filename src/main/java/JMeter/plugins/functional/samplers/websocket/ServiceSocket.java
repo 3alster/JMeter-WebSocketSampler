@@ -70,9 +70,11 @@ public class ServiceSocket {
     public void onMessage(String msg) {
         synchronized (parent) {
             log.debug("Received message: " + msg);
-            String length = " (" + msg.length() + " bytes)";
-            logMessage.append(" - Received message #").append(messageCounter).append(length);
-            addResponseMessage("[Message " + (messageCounter++) + "]\n" + msg + "\n\n");
+            String length = " (" + msg.length() + " bytes) ";
+            String ts =new java.util.Date().toString();
+            logMessage.append(" - Received message #").append(messageCounter).append(length).append(ts);
+            logMessage.append("matching ").append(msg).append(" against ").append(responsePattern).append("\n");
+            addResponseMessage("[Message " + (messageCounter++) + "] "+ts+ "\n" + msg + "\n\n");
 
             if (responseExpression == null || responseExpression.matcher(msg).find()) {
                 logMessage.append("; matched response pattern").append("\n");
@@ -98,9 +100,10 @@ public class ServiceSocket {
 
     @OnWebSocketClose
     public void onClose(int statusCode, String reason) throws IOException{
-        if (statusCode==1006){
+        if (statusCode==1006) {
+            connected=false;
             log.debug("trying to Reconnect");
-            logMessage.append(" Reopening websocket connection\n");
+            logMessage.append(" Reopening websocket connection ").append(new java.util.Date().toString()).append("\n");
             client.connect(this,ws_URI);
         }  else{
 
@@ -252,7 +255,6 @@ public class ServiceSocket {
         logMessage.append("\n\n[Execution Flow]\n");
         logMessage.append(" - Reusing exising connection\n");
         error = 0;
-
         this.closeLatch = new CountDownLatch(1);
     }
 
